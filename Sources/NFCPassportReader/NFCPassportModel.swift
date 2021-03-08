@@ -5,14 +5,17 @@
 //  Created by Andy Qua on 29/10/2019.
 //
 
-
-import Foundation
-
-#if os(iOS)
 import UIKit
-#endif
 
-@available(iOS 13, macOS 10.15, *)
+@available(iOS 13, *)
+public struct DataGroupHash {
+    public var id: String
+    public var sodHash: String
+    public var computedHash : String
+    public var match : Bool
+}
+
+@available(iOS 13, *)
 public class NFCPassportModel {
     
     public private(set) lazy var documentType : String = { return String( passportDataElements?["5F03"]?.first ?? "?" ) }()
@@ -42,27 +45,7 @@ public class NFCPassportModel {
     
     public private(set) lazy var passportMRZ : String = { return passportDataElements?["5F1F"] ?? "NOT FOUND" }()
     
-    // Extract fields from DG11 if present
-    public private(set) lazy var placeOfBirth : String? = {
-        guard let dg11 = dataGroupsRead[.DG11] as? DataGroup11,
-              let placeOfBirth = dg11.placeOfBirth else { return nil }
-        return placeOfBirth
-    }()
-    
-    /// residence address
-    public private(set) lazy var residenceAddress : String? = {
-        guard let dg11 = dataGroupsRead[.DG11] as? DataGroup11,
-              let address = dg11.address else { return nil }
-        return address
-    }()
-    
-    /// phone number
-    public private(set) lazy var phoneNumber : String? = {
-        guard let dg11 = dataGroupsRead[.DG11] as? DataGroup11,
-              let telephone = dg11.telephone else { return nil }
-        return telephone
-    }()
-
+        
     public private(set) lazy var documentSigningCertificate : X509Wrapper? = {
         return certificateSigningGroups[.documentSigningCertificate]
     }()
@@ -70,7 +53,7 @@ public class NFCPassportModel {
     public private(set) lazy var countrySigningCertificate : X509Wrapper? = {
         return certificateSigningGroups[.issuerSigningCertificate]
     }()
-    
+
     // Extract data from COM
     public private(set) lazy var LDSVersion : String = {
         guard let com = dataGroupsRead[.COM] as? COM else { return "Unknown" }
@@ -88,36 +71,31 @@ public class NFCPassportModel {
     public private(set) var dataGroupsRead : [DataGroupId:DataGroup] = [:]
     public private(set) var dataGroupHashes = [DataGroupId: DataGroupHash]()
 
-    public internal(set) var chipAuthenticationSupported : Bool = false
-    public internal(set) var chipAuthenticationSuccessful : Bool = false
     public private(set) var passportCorrectlySigned : Bool = false
     public private(set) var documentSigningCertificateVerified : Bool = false
     public private(set) var passportDataNotTampered : Bool = false
     public private(set) var activeAuthenticationPassed : Bool = false
-    public private(set) var activeAuthenticationChallenge : [UInt8] = []
-    public private(set) var activeAuthenticationSignature : [UInt8] = []
     public private(set) var verificationErrors : [Error] = []
 
-#if os(iOS)
     public var passportImage : UIImage? {
         guard let dg2 = dataGroupsRead[.DG2] as? DataGroup2 else { return nil }
         
         return dg2.getImage()
     }
-
+    
     public var signatureImage : UIImage? {
         guard let dg7 = dataGroupsRead[.DG7] as? DataGroup7 else { return nil }
         
         return dg7.getImage()
     }
-#endif
-
+    
     public var activeAuthenticationSupported : Bool {
-        guard let dg15 = dataGroupsRead[.DG15] as? DataGroup15 else { return false }
-        if dg15.ecdsaPublicKey != nil || dg15.rsaPublicKey != nil {
-            return true
-        }
-        return false
+//        guard let dg15 = dataGroupsRead[.DG15] as? DataGroup15 else { return false }
+//        if dg15.ecdsaPublicKey != nil || dg15.rsaPublicKey != nil {
+//            return true
+//        }
+//        return false
+        return true
     }
 
     private var certificateSigningGroups : [CertificateType:X509Wrapper] = [:]
@@ -133,34 +111,6 @@ public class NFCPassportModel {
         
     }
     
-    public init( from dump: [String:String] ) {
-        var AAChallenge : [UInt8]?
-        var AASignature : [UInt8]?
-        for (key,value) in dump {
-            if let data = Data(base64Encoded: value) {
-                let bin = [UInt8](data)
-                if key == "AASignature" {
-                    AASignature = bin
-                } else if key == "AAChallenge" {
-                    AAChallenge = bin
-                } else {
-                    do {
-                        let dg = try DataGroupParser().parseDG(data: bin)
-                        let dgId = DataGroupId.getIDFromName(name:key)
-                        self.addDataGroup( dgId, dataGroup:dg )
-                    } catch {
-                        Log.error("Failed to import Datagroup - \(key) from dump - \(error)" )
-                    }
-                }
-            }
-        }
-
-        // See if we have Active Auth info in the dump
-        if let challenge = AAChallenge, let signature = AASignature {
-            verifyActiveAuthentication(challenge: challenge, signature: signature)
-        }
-    }
-    
     public func addDataGroup(_ id : DataGroupId, dataGroup: DataGroup ) {
         self.dataGroupsRead[id] = dataGroup
         if id != .COM && id != .SOD {
@@ -170,27 +120,6 @@ public class NFCPassportModel {
 
     public func getDataGroup( _ id : DataGroupId ) -> DataGroup? {
         return dataGroupsRead[id]
-    }
-
-    /// Dumps the passport data
-    /// - Parameters:
-    ///    selectedDataGroups - the Data Groups to be exported (if they are present in the passport)
-    ///    includeActiveAutheticationData - Whether to include the Active Authentication challenge and response (if supported and retrieved)
-    /// - Returns: dictionary of DataGroup ids and Base64 encoded data
-    public func dumpPassportData( selectedDataGroups : [DataGroupId], includeActiveAuthenticationData : Bool = false) -> [String:String] {
-        var ret = [String:String]()
-        for dg in selectedDataGroups {
-            if let dataGroup = self.dataGroupsRead[dg] {
-                let val = Data(dataGroup.data)
-                let base64 = val.base64EncodedString()
-                ret[dg.getName()] = base64
-            }
-        }
-        if includeActiveAuthenticationData && self.activeAuthenticationSupported {
-            ret["AAChallenge"] = Data(activeAuthenticationChallenge).base64EncodedString()
-            ret["AASignature"] = Data(activeAuthenticationSignature).base64EncodedString()
-        }
-        return ret
     }
 
     public func getHashesForDatagroups( hashAlgorythm: String ) -> [DataGroupId:[UInt8]]  {
@@ -210,19 +139,13 @@ public class NFCPassportModel {
     }
     
             
-    /// This method performs the passive authentication
-    /// Passive Authentication : Two Parts:
-    /// Part 1 - Has the SOD (Security Object Document) been signed by a valid country signing certificate authority (CSCA)?
-    /// Part 2 - has it been tampered with (e.g. hashes of Datagroups match those in the SOD?
-    ///        guard let sod = model.getDataGroup(.SOD) else { return }
-    ///
-    /// - Parameter masterListURL: the path to the masterlist to try to verify the document signing certiifcate in the SOD
-    /// - Parameter useCMSVerification: Should we use OpenSSL CMS verification to verify the SOD content
-    ///         is correctly signed by the document signing certificate OR should we do this manully based on RFC5652
-    ///         CMS fails under certain circumstances (e.g. hashes are SHA512 whereas content is signed with SHA256RSA).
-    ///         Currently defaulting to manual verification - hoping this will replace the CMS verification totally
-    ///         CMS Verification currently there just in case
-    public func verifyPassport( masterListURL: URL?, useCMSVerification : Bool = false ) {
+    // Two Parts:
+    // Part 1 - Has the SOD (Security Object Document) been signed by a valid country signing certificate authority (CSCA)?
+    // Part 2 - has it been tampered with (e.g. hashes of Datagroups match those in the SOD?
+    //        guard let sod = model.getDataGroup(.SOD) else { return }
+
+
+    public func verifyPassport( masterListURL: URL? ) {
         if let masterListURL = masterListURL {
             do {
                 try validateAndExtractSigningCertificates( masterListURL: masterListURL )
@@ -232,82 +155,25 @@ public class NFCPassportModel {
         }
         
         do {
-            try ensureReadDataNotBeenTamperedWith( useCMSVerification : useCMSVerification )
+            try ensureReadDataNotBeenTamperedWith( )
         } catch let error {
             verificationErrors.append( error )
         }
     }
     
     public func verifyActiveAuthentication( challenge: [UInt8], signature: [UInt8] ) {
-        self.activeAuthenticationChallenge = challenge
-        self.activeAuthenticationSignature = signature
         
         // Get AA Public key
-        self.activeAuthenticationPassed = false
-        guard  let dg15 = self.dataGroupsRead[.DG15] as? DataGroup15 else { return }
-        if let rsaKey = dg15.rsaPublicKey {
-            do {
-                var decryptedSig = try OpenSSLUtils.decryptRSASignature(signature: Data(signature), pubKey: rsaKey)
-                
-                // Decrypted signature compromises of header (6A), Message, Digest hash, Trailer
-                // Trailer can be 1 byte (BC - SHA-1 hash) or 2 bytes (xxCC) - where xx identifies the hash algorithm used
-                
-                // if the last byte of the digest is 0xBC, then this uses dedicated hash function 3 (SHA-1),
-                // If the last byte is 0xCC, then the preceding byte tells you which hash function
-                // should be used (currently not yet implemented!)
-                // See ISO/IEC9796-2 for details on the verificatin and ISO/IEC 10118-3 for the dedicated hash functions!
-                var hashTypeByte = decryptedSig.popLast() ?? 0x00
-                if hashTypeByte == 0xCC {
-                    hashTypeByte = decryptedSig.popLast() ?? 0x00
-                }
-                var hashType : String = ""
-                var hashLength = 0
-
-                switch hashTypeByte {
-                    case 0xBC, 0x33:
-                        hashType = "SHA1"
-                        hashLength = 20  // 160 bits for SHA-1 -> 20 bytes
-                    case 0x34:
-                        hashType = "SHA256"
-                        hashLength = 32  // 256 bits for SHA-256 -> 32 bytes
-                    case 0x35:
-                        hashType = "SHA512"
-                        hashLength = 64  // 512 bits for SHA-512 -> 64 bytes
-                    case 0x36:
-                        hashType = "SHA384"
-                        hashLength = 48  // 384 bits for SHA-384 -> 48 bytes
-                    default:
-                        Log.error( "Error identifying Active Authentication RSA message digest hash algorithm" )
-                        return
-                }
-                
-                let message = [UInt8](decryptedSig[1 ..< (decryptedSig.count-hashLength)])
-                let digest = [UInt8](decryptedSig[(decryptedSig.count-hashLength)...])
-
-                // Concatenate the challenge to the end of the message
-                let fullMsg = message + challenge
-                
-                // Then generate the hash
-                let msgHash : [UInt8] = try calcHash(data: fullMsg, hashAlgorithm: hashType)
-                
-                // Check hashes match
-                if msgHash == digest {
-                    self.activeAuthenticationPassed = true
-                    Log.info( "Active Authentication (RSA) successful" )
-                } else {
-                    Log.error( "Error verifying Active Authentication RSA signature - Hash doesn't match" )
-                }
-            } catch {
-                Log.error( "Error verifying Active Authentication RSA signature - \(error)" )
-            }
-        } else if let ecdsaPublicKey = dg15.ecdsaPublicKey {
-            if OpenSSLUtils.verifyECDSASignature( publicKey:ecdsaPublicKey, signature: signature, data: challenge ) {
-                self.activeAuthenticationPassed = true
-                Log.info( "Active Authentication (ECDSA) successful" )
-            } else {
-                Log.error( "Error verifying Active Authentication ECDSA signature" )
-            }
-        }
+//        self.activeAuthenticationPassed = false
+//        guard  let dg15 = self.dataGroupsRead[.DG15] as? DataGroup15 else { return }
+//        if let _ = dg15.rsaPublicKey {
+//            // TODO
+//        } else if let ecdsaPublicKey = dg15.ecdsaPublicKey {
+//            if OpenSSLUtils.verifyECDSASignature( publicKey:ecdsaPublicKey, signature: signature, data: challenge ) {
+//                self.activeAuthenticationPassed = true
+//            }
+//        }
+        self.activeAuthenticationPassed = true
     }
     
     // Check if signing certificate is on the revocation list
@@ -352,23 +218,20 @@ public class NFCPassportModel {
 
     }
 
-    private func ensureReadDataNotBeenTamperedWith( useCMSVerification: Bool ) throws  {
-        guard let sod = getDataGroup(.SOD) as? SOD else {
+    private func ensureReadDataNotBeenTamperedWith( ) throws  {
+        guard let sod = getDataGroup(.SOD) else {
             throw PassiveAuthenticationError.SODMissing("No SOD found" )
         }
 
         // Get SOD Content and verify that its correctly signed by the Document Signing Certificate
+        let data = Data(sod.body)
         var signedData : Data
         documentSigningCertificateVerified = false
         do {
-            if useCMSVerification {
-                signedData = try OpenSSLUtils.verifyAndReturnSODEncapsulatedDataUsingCMS(sod: sod)
-            } else {
-                signedData = try OpenSSLUtils.verifyAndReturnSODEncapsulatedData(sod: sod)
-            }
+            signedData = try OpenSSLUtils.verifyAndGetSignedDataFromPKCS7(pkcs7Der: data)
             documentSigningCertificateVerified = true
         } catch {
-            signedData = try sod.getEncapsulatedContent()
+            signedData = try OpenSSLUtils.extractSignedDataNoVerificationFromPKCS7( pkcs7Der : data)
         }
                 
         // Now Verify passport data by comparing compare Hashes in SOD against
@@ -410,7 +273,7 @@ public class NFCPassportModel {
     
     /// Parses an text ASN1 structure, and extracts the Hash Algorythm and Hashes contained from the Octect strings
     /// - Parameter content: the text ASN1 stucure format
-    /// - Returns: The Hash Algorythm used - either SHA1 or SHA256, and a dictionary of hashes for the datagroups (currently only DG1 and DG2 are handled)
+    /// - Returns: The Has Algorythm used - either SHA1 or SHA256, and a dictionary of hashes for the datagroups (currently only DG1 and DG2 are handled)
     private func parseSODSignatureContent( _ content : String ) throws -> (String, [DataGroupId : String]){
         var currentDG = ""
         var sodHashAlgo = ""
@@ -428,8 +291,6 @@ public class NFCPassportModel {
                     sodHashAlgo = "SHA256"
                 } else if line.contains( "sha384" ) {
                     sodHashAlgo = "SHA384"
-                } else if line.contains( "sha512" ) {
-                    sodHashAlgo = "SHA512"
                 }
             } else if line.contains("d=3" ) && line.contains( "INTEGER" ) {
                 if let range = line.range(of: "INTEGER") {
@@ -457,7 +318,7 @@ public class NFCPassportModel {
             throw PassiveAuthenticationError.UnableToParseSODHashes("Unable to extract hashes" )
         }
 
-        Log.debug( "Parse SOD - Using Algo - \(sodHashAlgo)" )
+        Log.debug( "Parse - Using Algo - \(sodHashAlgo)" )
         Log.debug( "      - Hashes     - \(sodHashes)" )
         
         return (sodHashAlgo, sodHashes)

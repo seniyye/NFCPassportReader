@@ -6,9 +6,8 @@
 //  Copyright © 2019 Andy Qua. All rights reserved.
 //
 
-import Foundation
+import UIKit
 import CommonCrypto
-
 #if canImport(CryptoKit)
     import CryptoKit
 #endif
@@ -134,13 +133,11 @@ public func generateRandomUInt8Array( _ size: Int ) -> [UInt8] {
     return ret
 }
 
-public func pad(_ toPad : [UInt8], blockSize : Int) -> [UInt8] {
-    
-    var ret = toPad + [0x80]
-    while ret.count % blockSize != 0 {
-        ret.append(0x00)
-    }
-    return ret
+public func pad(_ toPad : [UInt8]) -> [UInt8] {
+    let size = 8
+    let padBlock : [UInt8] = [0x80, 0, 0, 0, 0, 0, 0, 0]
+    let left = size - (toPad.count % size)
+    return (toPad + [UInt8](padBlock[0 ..< left]))
 }
 
 public func unpad( _ tounpad : [UInt8]) -> [UInt8] {
@@ -157,119 +154,56 @@ public func unpad( _ tounpad : [UInt8]) -> [UInt8] {
     }
 }
 
-@available(iOS 13, macOS 10.15, *)
-public func mac(algoName: SecureMessagingSupportedAlgorithms, key : [UInt8], msg : [UInt8]) -> [UInt8] {
-    if algoName == .DES {
-        return desMAC(key: key, msg: msg)
-    } else {
-        return aesMAC(key: key, msg: msg)
-    }
-}
-
-@available(iOS 13, macOS 10.15, *)
-public func desMAC(key : [UInt8], msg : [UInt8]) -> [UInt8]{
+@available(iOS 13, *)
+public func mac(key : [UInt8], msg : [UInt8]) -> [UInt8]{
     
     let size = msg.count / 8
     var y : [UInt8] = [0,0,0,0,0,0,0,0]
     
-    Log.verbose("Calc mac" )
+    
     for i in 0 ..< size {
         let tmp = [UInt8](msg[i*8 ..< i*8+8])
-        Log.verbose("x\(i): \(binToHexRep(tmp))" )
+        Log.debug("x\(i): \(binToHexRep(tmp))" )
         y = DESEncrypt(key: [UInt8](key[0..<8]), message: tmp, iv: y)
-        Log.verbose("y\(i): \(binToHexRep(y))" )
+        Log.debug("y\(i): \(binToHexRep(y))" )
     }
     
-    Log.verbose("y: \(binToHexRep(y))" )
-    Log.verbose("bkey: \(binToHexRep([UInt8](key[8..<16])))" )
-    Log.verbose("akey: \(binToHexRep([UInt8](key[0..<8])))" )
+    Log.debug("y: \(binToHexRep(y))" )
+    Log.debug("bkey: \(binToHexRep([UInt8](key[8..<16])))" )
+    Log.debug("akey: \(binToHexRep([UInt8](key[0..<8])))" )
     let iv : [UInt8] = [0,0,0,0,0,0,0,0]
     let b = DESDecrypt(key: [UInt8](key[8..<16]), message: y, iv: iv, options:UInt32(kCCOptionECBMode))
-    Log.verbose( "b: \(binToHexRep(b))" )
+    Log.debug( "b: \(binToHexRep(b))" )
     let a = DESEncrypt(key: [UInt8](key[0..<8]), message: b, iv: iv, options:UInt32(kCCOptionECBMode))
-    Log.verbose( "a: \(binToHexRep(a))" )
+    Log.debug( "a: \(binToHexRep(a))" )
     
     return a
 }
 
-@available(iOS 13, macOS 10.15, *)
-public func aesMAC( key: [UInt8], msg : [UInt8] ) -> [UInt8] {
-    let mac = OpenSSLUtils.generateAESCMAC( key: key, message:msg )
-    return mac
-}
-
-@available(iOS 13, macOS 10.15, *)
-func wrapDO( b : UInt8, arr : [UInt8] ) -> [UInt8] {
-    let result : [UInt8] = [b, UInt8(arr.count)] + arr
-    return result;
-}
-
-@available(iOS 13, macOS 10.15, *)
-func unwrapDO( tag : UInt8, wrappedData : [UInt8]) throws -> [UInt8] {
-    let actualTag = wrappedData[0];
-    if actualTag != tag {
-        throw NFCPassportReaderError.InvalidASN1Value
-    }
-    // Check tag?
-    let result = [UInt8](wrappedData[2...])
-    return result;
-}
-
-
-public func intToBytes( val: Int, removePadding:Bool) -> [UInt8] {
-    if val == 0 {
-        return [0]
-    }
-    var data = withUnsafeBytes(of: val.bigEndian, Array.init)
-
-    if removePadding {
-        // Remove initial 0 bytes
-        for i in 0 ..< data.count {
-            if data[i] != 0 {
-                data = [UInt8](data[i...])
-                break
-            }
-        }
-    }
-    return data
-}
-
-@available(iOS 13, *)
-public func oidToBytes(oid : String) -> [UInt8] {
-    var encOID = OpenSSLUtils.asn1EncodeOID(oid: oid)
-    
-    // Replace tag (0x06) with 0x80
-    encOID[0] = 0x80
-    return encOID
-}
-
-
 
 /// Take an asn.1 length, and return a couple with the decoded length in hexa and the total length of the encoding (1,2 or 3 bytes)
 ///
-/// Using Basic Encoding Rules (BER):
-/// If the first byte is <= 0x7F (0-127), then this is the total length of the data
-/// If the first byte is 0x81 then the length is the value of the next byte
-/// If the first byte is 0x82 then the length is the value of the next two bytes
-/// If the first byte is 0x80 then the length is indefinite (never seen this and not sure exactle what it means)
-/// e.g.
-/// if the data was 0x02, 0x11, 0x12, then the amount of data we have to read is two bytes, and the actual data is [0x11, 0x12]
-/// If the length was 0x81,0x80,....... then we know that the data length is contained in the next byte - 0x80 (128), so the amount of data to read is 128 bytes
-/// If the length was 0x82,0x01,0x01,....... then we know that the data length is contained in the next 2 bytes - 0x01, 0x01 (257) so the amount of data to read is 257 bytes
+/// >>> from pyPassport.asn1.asn1 import *
+/// >>> asn1Length("\x22")
+/// (34, 1)
+/// >>> asn1Length("\x81\xaa")
+/// (170, 2)
+/// >>> asn1Length("\x82\xaa\xbb")
+/// (43707, 3)
 ///
 /// @param data: A length value encoded in the asn.1 format.
 /// @type data: A binary string.
 /// @return: A tuple with the decoded hexa length and the length of the asn.1 encoded value.
 /// @raise asn1Exception: If the parameter does not follow the asn.1 notation.
 
-@available(iOS 13, macOS 10.15, *)
+@available(iOS 13, *)
 public func asn1Length( _ data: ArraySlice<UInt8> ) throws -> (Int, Int) {
     return try asn1Length( Array(data) )
 }
 
-@available(iOS 13, macOS 10.15, *)
+@available(iOS 13, *)
 public func asn1Length(_ data : [UInt8]) throws -> (Int, Int)  {
-    if data[0] < 0x80 {
+    if data[0] <= 0x7F {
         return (Int(binToHex(data[0])), 1)
     }
     if data[0] == 0x81 {
@@ -280,63 +214,44 @@ public func asn1Length(_ data : [UInt8]) throws -> (Int, Int)  {
         return (Int(val), 3)
     }
     
-    throw NFCPassportReaderError.CannotDecodeASN1Length
+    throw TagError.CannotDecodeASN1Length
     
 }
 
-/// Convert a length to asn.1 format
+/// Take an hexa value and return the value encoded in the asn.1 format.
+///
+/// >>> binToHexRep(toAsn1Length(34))
+/// '22'
+/// >>> binToHexRep(toAsn1Length(170))
+/// '81aa'
+/// >>> binToHexRep(toAsn1Length(43707))
+/// '82aabb'
+///
 /// @param data: The value to encode in asn.1
 /// @type data: An integer (hexa)
 /// @return: The asn.1 encoded value
 /// @rtype: A binary string
 /// @raise asn1Exception: If the parameter is too big, must be >= 0 and <= FFFF
-@available(iOS 13, macOS 10.15, *)
+@available(iOS 13, *)
 public func toAsn1Length(_ data : Int) throws -> [UInt8] {
-    if data < 0x80 {
+    if data <= 0x7F {
         return hexRepToBin(String(format:"%02x", data))
     }
     if data >= 0x80 && data <= 0xFF {
         return [0x81] + hexRepToBin( String(format:"%02x",data))
     }
-    if data >= 0x0100 && data <= 0xFFFF {
+    if data >= 0x0100 && data <= 0xFFFF { //binToHex("\x01\x00") and data <= binToHex("\xFF\xFF") {
         return [0x82] + hexRepToBin( String(format:"%04x",data))
     }
     
-    throw NFCPassportReaderError.InvalidASN1Value
+    throw TagError.InvalidASN1Value
 }
         
-
-
-/// This function calculates a  Hash of the input data based on the input algorithm
-/// @param data: a byte array of data
-/// @param hashAlgorithm: the hash algorithm to be used - supported ones are SHA1, SHA256, SHA384 and SHA512
-///        Currently specifying any others return empty array
-/// @return: A hash of the data
-@available(iOS 13, macOS 10.15, *)
-public func calcHash( data: [UInt8], hashAlgorithm: String ) throws -> [UInt8] {
-    var ret : [UInt8] = []
-    
-    let hashAlgorithm = hashAlgorithm.lowercased()
-    if hashAlgorithm == "sha1" {
-        ret = calcSHA1Hash(data)
-    } else if hashAlgorithm == "sha256" {
-        ret = calcSHA256Hash(data)
-    } else if hashAlgorithm == "sha384" {
-        ret = calcSHA384Hash(data)
-    } else if hashAlgorithm == "sha512" {
-        ret = calcSHA512Hash(data)
-    } else {
-        throw NFCPassportReaderError.InvalidHashAlgorithmSpecified
-    }
-        
-    return ret
-}
-
 
 /// This function calculates a SHA1 Hash of the input data
 /// @param data: a byte array of data
 /// @return: A SHA1 hash of the data
-@available(iOS 13, macOS 10.15, *)
+@available(iOS 13, *)
 func calcSHA1Hash( _ data: [UInt8] ) -> [UInt8] {
     #if canImport(CryptoKit)
     var sha1 = Insecure.SHA1()
@@ -352,7 +267,7 @@ func calcSHA1Hash( _ data: [UInt8] ) -> [UInt8] {
 /// This function calculates a SHA256 Hash of the input data
 /// @param data: a byte array of data
 /// @return: A SHA256 hash of the data
-@available(iOS 13, macOS 10.15, *)
+@available(iOS 13, *)
 func calcSHA256Hash( _ data: [UInt8] ) -> [UInt8] {
     #if canImport(CryptoKit)
     var sha1 = SHA256()
@@ -365,26 +280,10 @@ func calcSHA256Hash( _ data: [UInt8] ) -> [UInt8] {
     #endif
 }
 
-/// This function calculates a SHA512 Hash of the input data
-/// @param data: a byte array of data
-/// @return: A SHA512 hash of the data
-@available(iOS 13, macOS 10.15, *)
-func calcSHA512Hash( _ data: [UInt8] ) -> [UInt8] {
-    #if canImport(CryptoKit)
-    var sha1 = SHA512()
-    sha1.update(data: data)
-    let hash = sha1.finalize()
-    
-    return Array(hash)
-    #else
-    fatalError("Couldn't import CryptoKit")
-    #endif
-}
-
 /// This function calculates a SHA384 Hash of the input data
 /// @param data: a byte array of data
-/// @return: A SHA384 hash of the data
-@available(iOS 13, macOS 10.15, *)
+/// @return: A SHA1 hash of the data
+@available(iOS 13, *)
 func calcSHA384Hash( _ data: [UInt8] ) -> [UInt8] {
     #if canImport(CryptoKit)
     var sha384 = SHA384()
