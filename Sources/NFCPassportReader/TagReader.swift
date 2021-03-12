@@ -7,218 +7,49 @@
 //
 
 import Foundation
+
+#if !os(macOS)
 import CoreNFC
-@available(iOS 13, *)
-public enum PassportTagError : Error {
-    case responseError( UInt8, UInt8 )
-}
-@available(iOS 13, *)
-extension PassportTagError: LocalizedError {
-    public var errorDescription: String? {
-        switch self {
-        case .responseError:
-            return NSLocalizedString("A user-friendly description of the error.", comment: "My error")
-        }
-    }
-}
-
-@available(iOS 13, *)
-public enum TagError: Error {
-    case ResponseError(String, UInt8, UInt8)
-    case InvalidResponse
-    case UnexpectedError
-    case NFCNotSupported
-    case NoConnectedTag
-    case D087Malformed
-    case InvalidResponseChecksum
-    case MissingMandatoryFields
-    case CannotDecodeASN1Length
-    case InvalidASN1Value
-    case UnableToProtectAPDU
-    case UnableToUnprotectAPDU
-    case UnsupportedDataGroup
-    case DataGroupNotRead
-    case UnknownTag
-    case UnknownImageFormat
-    case NotImplemented
-    case TagNotValid
-    case ConnectionError
-    case UserCanceled
-    case InvalidMRZKey
-    case MoreThanOneTagFound
-
-    var value: String {
-        switch self {
-        case .ResponseError(let errMsg, _, _): return errMsg
-        case .InvalidResponse: return "InvalidResponse"
-        case .UnexpectedError: return "UnexpectedError"
-        case .NFCNotSupported: return "NFCNotSupported"
-        case .NoConnectedTag: return "NoConnectedTag"
-        case .D087Malformed: return "D087Malformed"
-        case .InvalidResponseChecksum: return "InvalidResponseChecksum"
-        case .MissingMandatoryFields: return "MissingMandatoryFields"
-        case .CannotDecodeASN1Length: return "CannotDecodeASN1Length"
-        case .InvalidASN1Value: return "InvalidASN1Value"
-        case .UnableToProtectAPDU: return "UnableToProtectAPDU"
-        case .UnableToUnprotectAPDU: return "UnableToUnprotectAPDU"
-        case .UnsupportedDataGroup: return "UnsupportedDataGroup"
-        case .DataGroupNotRead: return "DataGroupNotRead"
-        case .UnknownTag: return "UnknownTag"
-        case .UnknownImageFormat: return "UnknownImageFormat"
-        case .NotImplemented: return "NotImplemented"
-        case .TagNotValid: return "TagNotValid"
-        case .ConnectionError: return "ConnectionError"
-        case .UserCanceled: return "UserCanceled"
-        case .InvalidMRZKey: return "InvalidMRZKey"
-        case .MoreThanOneTagFound: return "MoreThanOneTagFound"
-        }
-    }
-}
-
-@available(iOS 13, *)
-public enum DataGroupId : Int, CaseIterable {
-    case COM = 0x60
-    case DG1 = 0x61
-    case DG2 = 0x75
-    case DG3 = 0x63
-    case DG4 = 0x76
-    case DG5 = 0x65
-    case DG6 = 0x66
-    case DG7 = 0x67
-    case DG8 = 0x68
-    case DG9 = 0x69
-    case DG10 = 0x6A
-    case DG11 = 0x6B
-    case DG12 = 0x6C
-    case DG13 = 0x6D
-    case DG14 = 0x6E
-    case DG15 = 0x6F
-    case DG16 = 0x70
-    case SOD = 0x77
-    case Unknown = 0x00
-    
-    public func getName() -> String {
-        switch( self ) {
-        case .COM: return "COM"
-        case .DG1: return "DG1"
-        case .DG2: return "DG2"
-        case .DG3: return "DG3"
-        case .DG4: return "DG4"
-        case .DG5: return "DG5"
-        case .DG6: return "DG6"
-        case .DG7: return "DG7"
-        case .DG8: return "DG8"
-        case .DG9: return "DG9"
-        case .DG10: return "DG10"
-        case .DG11: return "DG11"
-        case .DG12: return "DG12"
-        case .DG13: return "DG13"
-        case .DG14: return "DG14"
-        case .DG15: return "DG15"
-        case .DG16: return "DG16"
-        case .SOD: return "SOD"
-        case .Unknown: return "Unknown"
-        }
-    }
-    
-    static public func getIDFromName( name: String ) -> DataGroupId {
-        switch( name ) {
-        case "COM": return .COM
-        case "DG1": return .DG1
-        case "DG2": return .DG2
-        case "DG3": return .DG3
-        case "DG4": return .DG4
-        case "DG5": return .DG5
-        case "DG6": return .DG6
-        case "DG7": return .DG7
-        case "DG8": return .DG8
-        case "DG9": return .DG9
-        case "DG10": return .DG10
-        case "DG11": return .DG11
-        case "DG12": return .DG12
-        case "DG13": return .DG13
-        case "DG14": return .DG14
-        case "DG15": return .DG15
-        case "DG16": return .DG16
-        case "SOD": return .SOD
-        default: return .Unknown
-        }
-    }
-
-}
-
-@available(iOS 13, *)
-private let DataGroupToFileIdMap : [DataGroupId: [UInt8]] = [
-    .COM : [0x01,0x1E],
-    .DG1 : [0x01,0x01],
-    .DG2 : [0x01,0x02],
-    .DG3 : [0x01,0x03],
-    .DG4 : [0x01,0x04],
-    .DG5 : [0x01,0x05],
-    .DG6 : [0x01,0x06],
-    .DG7 : [0x01,0x07],
-    .DG8 : [0x01,0x08],
-    .DG9 : [0x01,0x09],
-    .DG10 : [0x01,0x0A],
-    .DG11 : [0x01,0x0B],
-    .DG12 : [0x01,0x0C],
-    .DG13 : [0x01,0x0D],
-    .DG14 : [0x01,0x0E],
-    .DG15 : [0x01,0x0F],
-    .DG16 : [0x01,0x10],
-    .SOD : [0x01,0x1D],
-]
-
-@available(iOS 13, *)
-public struct ResponseAPDU {
-    
-    public var data : [UInt8]
-    public var sw1 : UInt8
-    public var sw2 : UInt8
-
-    public init(data: [UInt8], sw1: UInt8, sw2: UInt8) {
-        self.data = data
-        self.sw1 = sw1
-        self.sw2 = sw2
-    }
-}
 
 @available(iOS 13, *)
 public class TagReader {
     var tag : NFCISO7816Tag
     var secureMessaging : SecureMessaging?
-    var maxDataLengthToRead : Int = 256
+    var maxDataLengthToRead : Int = 0xA0  // Should be able to use 256 to read arbitrary amounts of data at full speed BUT this isn't supported across all passports so for reliability just use the smaller amount.
 
     var progress : ((Int)->())?
 
-    init( tag: NFCISO7816Tag) {
+    init( tag: NFCISO7816Tag ) {
         self.tag = tag
     }
     
+    func overrideDataAmountToRead( newAmount : Int ) {
+        maxDataLengthToRead = newAmount
+    }
+    
     func reduceDataReadingAmount() {
-        if maxDataLengthToRead == 256 {
+        if maxDataLengthToRead > 0xA0 {
             maxDataLengthToRead = 0xA0
         }
     }
 
 
-
-    func readDataGroup( dataGroup: DataGroupId, completed: @escaping ([UInt8]?, TagError?)->() )  {
-        guard let tag = DataGroupToFileIdMap[dataGroup] else {
-            completed(nil, TagError.UnsupportedDataGroup)
+    func readDataGroup( dataGroup: DataGroupId, completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() )  {
+        guard let tag = dataGroup.getFileIDTag() else {
+            completed(nil, NFCPassportReaderError.UnsupportedDataGroup)
             return
         }
         
         selectFileAndRead(tag: tag, completed:completed )
     }
     
-    func getChallenge( completed: @escaping (ResponseAPDU?, TagError?)->() ) {
+    func getChallenge( completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
         let cmd : NFCISO7816APDU = NFCISO7816APDU(instructionClass: 00, instructionCode: 0x84, p1Parameter: 0, p2Parameter: 0, data: Data(), expectedResponseLength: 8)
         
         send( cmd: cmd, completed: completed )
     }
     
-    func doInternalAuthentication( challenge: [UInt8], completed: @escaping (ResponseAPDU?, TagError?)->() ) {
+    func doInternalAuthentication( challenge: [UInt8], completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
         let randNonce = Data(challenge)
         
         let cmd = NFCISO7816APDU(instructionClass: 00, instructionCode: 0x88, p1Parameter: 0, p2Parameter: 0, data: randNonce, expectedResponseLength: 256)
@@ -226,15 +57,124 @@ public class TagReader {
         send( cmd: cmd, completed: completed )
     }
 
-    func doMutualAuthentication( cmdData : Data, completed: @escaping (ResponseAPDU?, TagError?)->() ) {
-        let cmd : NFCISO7816APDU = NFCISO7816APDU(instructionClass: 00, instructionCode: 0x82, p1Parameter: 0, p2Parameter: 0, data: cmdData, expectedResponseLength: 40)
+    func doMutualAuthentication( cmdData : Data, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
+        let cmd : NFCISO7816APDU = NFCISO7816APDU(instructionClass: 00, instructionCode: 0x82, p1Parameter: 0, p2Parameter: 0, data: cmdData, expectedResponseLength: 256)
 
         send( cmd: cmd, completed: completed )
     }
     
+    /// The MSE KAT APDU, see EAC 1.11 spec, Section B.1.
+    /// This command is sent in the "DESede" case.
+    /// - Parameter keyData key data object (tag 0x91)
+    /// - Parameter idData key id data object (tag 0x84), can be null
+    /// - Parameter completed the complete handler - returns the success response or an error
+    func sendMSEKAT( keyData : Data, idData: Data?, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
+        
+        var data = keyData
+        if let idData = idData {
+            data += idData
+        }
+        
+        let cmd : NFCISO7816APDU = NFCISO7816APDU(instructionClass: 00, instructionCode: 0x22, p1Parameter: 0x41, p2Parameter: 0xA6, data: data, expectedResponseLength: 256)
+        
+        send( cmd: cmd, completed: completed )
+    }
     
+    /// The  MSE Set AT for Chip Authentication.
+    /// This command is the first command that is sent in the "AES" case.
+    /// For Chip Authentication. We prefix 0x80 for OID and 0x84 for keyId.
+    ///
+    /// NOTE THIS IS CURRENTLY UNTESTED
+    /// - Parameter oid the OID
+    /// - Parameter keyId the keyId or {@code null}
+    /// - Parameter completed the complete handler - returns the success response or an error
+    func sendMSESetATIntAuth( oid: String, keyId: Int?, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
+        
+        let cmd : NFCISO7816APDU
+        let oidBytes = oidToBytes(oid: oid)
+
+        if let keyId = keyId, keyId != 0 {
+            let keyIdBytes = wrapDO(b:0x84, arr:intToBytes(val:keyId, removePadding: true))
+            let data = oidBytes + keyIdBytes
+
+            cmd = NFCISO7816APDU(instructionClass: 00, instructionCode: 0x22, p1Parameter: 0x41, p2Parameter: 0xA4, data: Data(data), expectedResponseLength: 256)
+
+        } else {
+            cmd = NFCISO7816APDU(instructionClass: 00, instructionCode: 0x22, p1Parameter: 0x41, p2Parameter: 0xA4, data: Data(oidBytes), expectedResponseLength: 256)
+        }
+        
+        send( cmd: cmd, completed: completed )
+    }
+    
+    
+    /// Sends a General Authenticate command.
+    /// This command is the second command that is sent in the "AES" case.
+    /// - Parameter data data to be sent, without the {@code 0x7C} prefix (this method will add it)
+    /// - Parameter lengthExpected the expected length defaults to 256
+    /// - Parameter isLast indicates whether this is the last command in the chain
+    /// - Parameter completed the complete handler - returns the dynamic authentication data without the {@code 0x7C} prefix (this method will remove it) or an error
+    func sendGeneralAuthenticate( data : [UInt8], lengthExpected : Int = 256, isLast: Bool, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
+
+        let wrappedData = wrapDO(b:0x7C, arr:data)
+        let commandData = Data(wrappedData)
+            
+         // NOTE: Support of Protocol Response Data is CONDITIONAL:
+         // It MUST be provided for version 2 but MUST NOT be provided for version 1.
+         // So, we are expecting 0x7C (= tag), 0x00 (= length) here.
+        
+        // 0x10 is class command chaining
+        let instructionClass : UInt8 = isLast ? 0x00 : 0x10
+        let INS_BSI_GENERAL_AUTHENTICATE : UInt8 = 0x86
+        
+        let cmd : NFCISO7816APDU = NFCISO7816APDU(instructionClass: instructionClass, instructionCode: INS_BSI_GENERAL_AUTHENTICATE, p1Parameter: 0x00, p2Parameter: 0x00, data: commandData, expectedResponseLength: lengthExpected)
+        send( cmd: cmd, completed: { [unowned self] (response, error) in
+            // Check for error
+            if let error = error {
+                // If wrong length error
+                if case NFCPassportReaderError.ResponseError(_, let sw1, let sw2) = error,
+                   sw1 == 0x67, sw2 == 0x00 {
+                    
+                    // Resend
+                    let cmd : NFCISO7816APDU = NFCISO7816APDU(instructionClass: instructionClass, instructionCode: INS_BSI_GENERAL_AUTHENTICATE, p1Parameter: 0x00, p2Parameter: 0x00, data: commandData, expectedResponseLength: 256)
+                    send( cmd: cmd, completed: { (response, error) in
+                        if let response = response {
+                            // Success
+                            do {
+                                var retResponse = response
+                                retResponse.data = try unwrapDO( tag:0x7c, wrappedData:retResponse.data)
+
+                                completed( retResponse, nil)
+                            } catch {
+                                completed( nil, NFCPassportReaderError.InvalidASN1Value)
+                            }
+                        } else {
+                            completed( nil, error)
+                        }
+                    })
+                } else {
+                    completed( nil, error)
+                }
+            } else {
+                // Success
+                if let response = response {
+                    do {
+                        var retResponse = response
+                        retResponse.data = try unwrapDO( tag:0x7c, wrappedData:retResponse.data)
+                        
+                        completed( retResponse, nil)
+                    } catch {
+                        completed( nil, NFCPassportReaderError.InvalidASN1Value)
+                    }
+                } else {
+                    completed( nil, error)
+                }
+            }
+        })
+    }
+    
+
     var header = [UInt8]()
-    func selectFileAndRead( tag: [UInt8], completed: @escaping ([UInt8]?, TagError?)->() ) {
+    func selectFileAndRead( tag: [UInt8], completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() ) {
         selectFile(tag: tag ) { [unowned self] (resp,err) in
             if let error = err {
                 completed( nil, error)
@@ -262,15 +202,14 @@ public class TagReader {
                 //print( "Got \(binToHexRep(response.data)) which is \(leftToRead) bytes with offset \(o)" )
                 self.header = [UInt8](response.data[..<offset])//response.data
 
-                
-                Log.debug( "Amount of data to read - \(leftToRead)" )
+                Log.debug( "TagReader - Number of data bytes to read - \(leftToRead)" )
                 self.readBinaryData(leftToRead: leftToRead, amountRead: offset, completed: completed)
 
             }
         }
     }
     
-    func selectFile( tag: [UInt8], completed: @escaping (ResponseAPDU?, TagError?)->() ) {
+    func selectFile( tag: [UInt8], completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
         
         let data : [UInt8] = [0x00, 0xA4, 0x02, 0x0C, 0x02] + tag
         let cmd = NFCISO7816APDU(data:Data(data))!
@@ -278,9 +217,9 @@ public class TagReader {
         send( cmd: cmd, completed: completed )
     }
     
-    func readBinaryData( leftToRead: Int, amountRead : Int, completed: @escaping ([UInt8]?, TagError?)->() ) {
+    func readBinaryData( leftToRead: Int, amountRead : Int, completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() ) {
         var readAmount : Int = maxDataLengthToRead
-        if leftToRead < maxDataLengthToRead {
+        if maxDataLengthToRead != 256 && leftToRead < maxDataLengthToRead {
             readAmount = leftToRead
         }
         
@@ -296,18 +235,17 @@ public class TagReader {
             expectedResponseLength: readAmount
         )
 
-        Log.debug( "Expected response length: \(readAmount)" )
+        Log.verbose( "TagReader - data bytes remaining: \(leftToRead), will read : \(readAmount)" )
         self.send( cmd: cmd ) { (resp,err) in
             guard let response = resp else {
                 completed( nil, err)
                 return
             }
-            Log.debug( "got resp - \(response)" )
+            Log.verbose( "TagReader - got resp - \(response)" )
             self.header += response.data
             
             let remaining = leftToRead - response.data.count
-        //print( "      read \(response.data.count) bytes" )
-            Log.debug( "Amount of data left read - \(remaining)" )
+            Log.verbose( "TagReader - Amount of data left to read - \(remaining)" )
             if remaining > 0 {
                 self.readBinaryData(leftToRead: remaining, amountRead: amountRead + response.data.count, completed: completed )
             } else {
@@ -318,46 +256,51 @@ public class TagReader {
     }
 
     
-    func send( cmd: NFCISO7816APDU, completed: @escaping (ResponseAPDU?, TagError?)->() ) {
+    func send( cmd: NFCISO7816APDU, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
         
+        Log.verbose( "TagReader - sending \(cmd)" )
         var toSend = cmd
         if let sm = secureMessaging {
             do {
                 toSend = try sm.protect(apdu:cmd)
             } catch {
-                completed( nil, TagError.UnableToProtectAPDU )
+                completed( nil, NFCPassportReaderError.UnableToProtectAPDU )
             }
-            Log.debug("[SM] \(toSend)" )
+            Log.verbose("TagReader - [SM] \(toSend)" )
         }
 
         tag.sendCommand(apdu: toSend) { [unowned self] (data, sw1, sw2, error) in
             if let error = error {
-                Log.error( "Error reading tag - \(error.localizedDescription)" )
-                completed( nil, TagError.ResponseError( error.localizedDescription, sw1, sw2 ) )
+                Log.error( "TagReader - Error reading tag - \(error.localizedDescription))" )
+                completed( nil, NFCPassportReaderError.ResponseError( error.localizedDescription, sw1, sw2 ) )
             } else {
+                Log.verbose( "TagReader - Received response" )
                 var rep = ResponseAPDU(data: [UInt8](data), sw1: sw1, sw2: sw2)
-                
+
                 if let sm = self.secureMessaging {
                     do {
                         rep = try sm.unprotect(rapdu:rep)
-//                        Log.debug(String(format:"[SM] \(rep.data), sw1:0x%02x sw2:0x%02x", rep.sw1, rep.sw2) )
+                        Log.verbose(String(format:"TagReader [SM - unprotected] \(rep.data), sw1:0x%02x sw2:0x%02x", rep.sw1, rep.sw2) )
                     } catch {
-                        completed( nil, TagError.UnableToUnprotectAPDU )
+                        completed( nil, NFCPassportReaderError.UnableToUnprotectAPDU )
                         return
                     }
+                } else {
+                    Log.verbose(String(format:"TagReader [unprotected] \(rep.data), sw1:0x%02x sw2:0x%02x", rep.sw1, rep.sw2) )
+
                 }
                 
                 if rep.sw1 == 0x90 && rep.sw2 == 0x00 {
                     completed( rep, nil )
                 } else {
                     Log.error( "Error reading tag: sw1 - 0x\(binToHexRep(sw1)), sw2 - 0x\(binToHexRep(sw2))" )
-                    let tagError: TagError
+                    let tagError: NFCPassportReaderError
                     if (rep.sw1 == 0x63 && rep.sw2 == 0x00) {
-                        tagError = TagError.InvalidMRZKey
+                        tagError = NFCPassportReaderError.InvalidMRZKey
                     } else {
                         let errorMsg = self.decodeError(sw1: rep.sw1, sw2: rep.sw2)
                         Log.error( "reason: \(errorMsg)" )
-                        tagError = TagError.ResponseError( errorMsg, sw1, sw2 )
+                        tagError = NFCPassportReaderError.ResponseError( errorMsg, sw1, sw2 )
                     }
                     completed( nil, tagError)
                 }
@@ -433,3 +376,4 @@ public class TagReader {
     }
 }
 
+#endif
